@@ -57,6 +57,24 @@ variable "drawdown_alert" {
   default     = 750
 }
 
+variable "account_start" {
+  description = "Prop account starting balance, for the console's account panel (e.g. 50000). 0 = hide target progress."
+  type        = number
+  default     = 0
+}
+
+variable "account_max_drawdown" {
+  description = "The firm's trailing drawdown limit in dollars (Lucid Flex: 1000). The console shows how much room is left. 0 = off."
+  type        = number
+  default     = 1000
+}
+
+variable "account_profit_target" {
+  description = "Profit target to pass the evaluation, in dollars. 0 = off."
+  type        = number
+  default     = 0
+}
+
 variable "monthly_budget_usd" {
   type    = number
   default = 5

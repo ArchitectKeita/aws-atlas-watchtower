@@ -63,7 +63,7 @@
     const ageMin = (Date.now() - Date.parse(last.t)) / 60e3;
     return { status: 200, body: {
       now: new Date().toISOString(), market_open: true, trading_day: day, bots: ["atlas", "demo"], bot: S.bot || "atlas",
-      config: { heartbeat_timeout_min: 5, stale_min: 3, daily_loss_alert: 400 },
+      config: { heartbeat_timeout_min: 5, stale_min: 3, daily_loss_alert: 400, drawdown_alert: 750, max_drawdown: 1000, profit_target: 3000, account_start: 49000 },
       state: { bot: "atlas", health: "ok", heartbeat_age_min: Math.round(ageMin * 10) / 10, tick_age_min: .1, tick_lag_min: last.tick_lag / 60,
         day_pnl: last.day_pnl, equity: last.equity, open_positions: last.open_positions, version: "0.2.9", paused: false, drawdown: 182.5,
         ants: ["news", "sentinel", "feed", "scout", "broker", "shadow", "shadow_mes", "shadow_mgc", "shadow_mym", "whatif", "journal", "messenger", "reporter", "uplink", "dashboard"].map((n, i) => ({ name: n, runs: 400 - i * 20, failures: n === "messenger" ? 4 : 0, consecutive_failures: n === "messenger" ? 4 : 0, last_error: n === "messenger" ? "TimeoutError('telegram')" : null })) },

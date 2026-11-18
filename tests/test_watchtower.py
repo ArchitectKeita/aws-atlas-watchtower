@@ -218,6 +218,7 @@ def test_feed_has_everything_the_dashboard_draws(env, monkeypatch):
     assert len(f["beats"]) == 4 and f["beats"][0]["tick_lag"] == 0 and "equity" in f["beats"][0]
     assert f["alerts"][0]["kind"] == "loss" and f["state"]["health"] == "warning"
     assert "_down" not in f["state"] and f["config"]["daily_loss_alert"] == 400
+    assert {"max_drawdown", "profit_target", "account_start"} <= set(f["config"])   # the console's account panel
     bad = env["api"].handler({"routeKey": "GET /feed", "headers": {"x-atlas-key": KEY},
                               "queryStringParameters": {"day": "nope"}}, None)
     assert bad["statusCode"] == 400

@@ -100,6 +100,9 @@ resource "aws_lambda_function" "fn" {
       STALE_MIN             = tostring(var.stale_min)
       DAILY_LOSS_ALERT      = tostring(var.daily_loss_alert)
       DRAWDOWN_ALERT        = tostring(var.drawdown_alert)
+      ACCOUNT_START         = tostring(var.account_start)
+      ACCOUNT_MAX_DRAWDOWN  = tostring(var.account_max_drawdown)
+      ACCOUNT_PROFIT_TARGET = tostring(var.account_profit_target)
     }
   }
 

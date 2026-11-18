@@ -5,3 +5,8 @@ alert_email = "you@example.com"
 # telegram_chat_id   = ""
 # daily_loss_alert   = 400            # set below the prop firm's daily loss limit
 # drawdown_alert     = 750            # warn at this much below the best balance (Lucid closes at $1,000); 0 = off
+
+# Prop account panel (optional)
+# account_start         = 50000
+# account_max_drawdown  = 1000
+# account_profit_target = 3000

@@ -290,6 +290,23 @@ th{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.16em}
 .bots button[aria-pressed=true],.win button[aria-pressed=true],.syms button[aria-pressed=true]{background:#eceef1!important;color:#050506!important;box-shadow:none!important}
 .iconbtn:hover,.bots button:hover,.syms button:hover,.win button:hover{background:#eceef1!important;color:#050506!important;border-color:#eceef1!important}
 .status{text-shadow:none!important;letter-spacing:.24em}
+
+/* account, feed check, replay */
+.quote{grid-template-columns:repeat(6,minmax(0,1fr))!important}
+@media (max-width:720px){.quote{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
+.acct{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+@media (max-width:820px){.acct{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.bar{height:4px;background:rgba(236,238,241,.08);margin:8px 0 6px;overflow:hidden}
+.bar .fill{display:block;height:100%;width:0;background:#eceef1;transition:width .6s}
+.bar .fill.warn{background:#d8cba8} .bar .fill.bad{background:#e0435a} .bar .fill.done{background:#f4f5f7;box-shadow:0 0 10px rgba(244,245,247,.6)}
+#tape tr[data-id]{cursor:pointer} #tape tr[data-id]:hover td{background:rgba(236,238,241,.06)}
+.modal{position:fixed;inset:0;z-index:80;background:rgba(2,2,3,.78);display:grid;place-items:center;padding:16px}
+.mbox{width:min(980px,100%);background:#0b0c0e;border:1px solid rgba(236,238,241,.22);padding:16px}
+.rpc{height:min(46vh,380px)}
+.rpcard{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-top:12px}
+.rpcard div{border:1px solid rgba(236,238,241,.1);padding:6px 10px;min-width:0} .rpcard div>span{display:block;font:500 10px var(--mono);letter-spacing:.14em;color:#8a8f97;text-transform:uppercase}
+.rpcard b{font-family:var(--mono);font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.rp-note{grid-column:1/-1;margin:2px 0 0;font-size:11.5px;color:#8a8f97}
 </style>
 </head>
 <body>
@@ -336,7 +353,7 @@ th{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.16em}
     <!-- COLONY -->
     <section class="panel span2" aria-label="Colony universe" id="unipanel">
       <div class="ph"><span class="pt">Colony · Universe</span>
-        <div class="legend"><span><i style="background:var(--cyan);height:7px;width:7px;border-radius:50%"></i>ant planet</span><span><i style="background:var(--green);height:6px;width:6px;border-radius:50%"></i>win</span><span><i style="background:var(--red);height:6px;width:6px;border-radius:50%"></i>loss</span><span><i style="background:#f2f3f5;height:5px;width:5px;border-radius:50%"></i>open position</span><span id="colonymood">—</span><button class="iconbtn" id="unifull" aria-pressed="false">Fullscreen</button></div>
+        <div class="legend"><span><i style="background:#f4f5f7;height:7px;width:7px;border-radius:50%"></i>healthy</span><span><i style="background:#d8cba8;height:7px;width:7px;border-radius:50%"></i>lagging</span><span><i style="background:#e0435a;height:7px;width:7px;border-radius:50%"></i>failing</span><span><i style="background:var(--green);height:6px;width:6px;border-radius:50%"></i>win</span><span><i style="background:var(--red);height:6px;width:6px;border-radius:50%"></i>loss · click a rock to replay</span><span><i style="background:#f2f3f5;height:5px;width:5px;border-radius:50%"></i>open position</span><span id="colonymood">—</span><button class="iconbtn" id="unifull" aria-pressed="false">Fullscreen</button></div>
       </div>
       <div class="cv colony"><canvas id="ant"></canvas></div>
     </section>
@@ -399,6 +416,16 @@ th{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.16em}
       </div>
     </section>
 
+    <!-- ACCOUNT -->
+    <section class="panel span2" aria-label="Prop account" id="acct">
+      <div class="ph"><span class="pt">Prop account</span><span class="sub">read-only · watches, never trades</span></div>
+      <div class="acct">
+        <div class="kpi"><div class="kl">Balance</div><div class="kv" id="a-bal">—</div><div class="ks" id="a-bal-s">—</div></div>
+        <div class="kpi"><div class="kl">Drawdown room</div><div class="kv" id="a-dd">—</div><div class="bar"><i class="fill" id="a-dd-b"></i></div><div class="ks" id="a-dd-s">—</div></div>
+        <div class="kpi"><div class="kl">Profit target</div><div class="kv" id="a-tg">—</div><div class="bar"><i class="fill" id="a-tg-b"></i></div><div class="ks" id="a-tg-s">—</div></div>
+        <div class="kpi"><div class="kl">Days to pass</div><div class="kv" id="a-pace">—</div><div class="ks" id="a-pace-s">—</div></div>
+      </div>
+    </section>
     <!-- MARKET -->
     <section class="panel span2" aria-label="Market">
       <div class="ph">
@@ -413,6 +440,7 @@ th{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.16em}
         <div><span class="ql">Bid × Ask</span><b id="q-ba">—</b></div>
         <div><span class="ql">High / Low</span><b id="q-hl">—</b></div>
         <div><span class="ql">Updated</span><b id="q-at">—</b></div>
+        <div><span class="ql">Feed check</span><b id="q-gap">—</b></div>
       </div>
       <div class="cv mkt" id="mkwrap"><canvas id="mkc"></canvas><div class="tip" id="mtip" hidden></div></div>
     </section>
@@ -453,6 +481,9 @@ th{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.16em}
     <span id="foot">watchdog sweep: every 60s</span>
   </footer>
 </main>
+<div class="modal" id="replay" hidden role="dialog" aria-label="Trade replay"><div class="mbox">
+  <div class="ph"><span class="pt" id="rp-title">Trade</span><button class="iconbtn" id="rp-close">Close</button></div>
+  <div class="cv rpc"><canvas id="rpc"></canvas></div><div class="rpcard" id="rp-card"></div></div></div>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -557,7 +588,7 @@ async function load(first){
     S.data = r.body; S.fetchedAt = Date.now(); S.bot = r.body.bot; store.set("wt-bot", S.bot);
     if (!S.day) S.day = r.body.trading_day;
     const nb = beatTime(r.body); if (prevBeat && nb && nb > prevBeat) flash();
-    Col.ingest(r.body); Hive.ingest(r.body);
+    Col.ingest(r.body); Hive.ingest(r.body); renderAccount(); feedCheck();
     $("toast").hidden = true;
     if (!first) render();
     return true;
@@ -624,7 +655,7 @@ function render(){
   $("tape").innerHTML = rows.length ? rows.map(t => {
     const isNew = S.seenTrades.size && !S.seenTrades.has(t.id); const w = Math.abs(t.pnl) / maxAbs * 50;
     const long = t.side === "long" || t.side === "buy";
-    return `<tr class="${isNew ? "new" : ""}"><td>${tET(t.closed_at)}</td><td>${esc(t.id)}</td><td>${esc(t.symbol)}</td>
+    return `<tr class="${isNew ? "new" : ""}" data-id="${esc(t.id)}" title="Click to replay this trade"><td>${tET(t.closed_at)}</td><td>${esc(t.id)}</td><td>${esc(t.symbol)}</td>
       <td><span class="side ${long ? "pos" : "neg"}">${long ? "LONG" : "SHORT"}</span></td><td class="n">${t.qty}</td>
       <td class="n">${t.entry != null ? t.entry.toLocaleString("en-US", { minimumFractionDigits: 2 }) : "—"}</td>
       <td class="n">${t.exit != null ? t.exit.toLocaleString("en-US", { minimumFractionDigits: 2 }) : "—"}</td>
@@ -922,13 +953,14 @@ const Col = (() => {
     comets.push({ t, i, x0: Math.cos(a) * far, y0: 30 + Math.random() * 40, z0: Math.sin(a) * far, life: 0, dur: 2.4, win: t.pnl >= 0 }); }
   function pulse(){ waves.push({ life: 0 }); if (planets.length) photons.push({ life: 0, to: planets[Math.floor(Math.random() * planets.length)] }); }
   // ---------------------------------------------------------------- interaction
-  cv.addEventListener("pointerdown", e => { cam.drag = { x: e.clientX, y: e.clientY, yaw: cam.tYaw, pitch: cam.tPitch }; cam.auto = false; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointerdown", e => { cam.down = [e.clientX, e.clientY]; cam.drag = { x: e.clientX, y: e.clientY, yaw: cam.tYaw, pitch: cam.tPitch }; cam.auto = false; cv.setPointerCapture(e.pointerId); });
   cv.addEventListener("pointermove", e => { const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
     if (cam.drag) { cam.tYaw = cam.drag.yaw + (e.clientX - cam.drag.x) * .006; cam.tPitch = Math.max(.12, Math.min(1.35, cam.drag.pitch + (e.clientY - cam.drag.y) * .005)); }
     hover = null; let best = 16; for (const s of shots) { const dd = Math.hypot(s.x - mx, s.y - my); if (dd < Math.max(best, s.rad + 4)) { best = dd; hover = s; } }
     cv.style.cursor = hover ? "pointer" : cam.drag ? "grabbing" : "grab";
     if (hover) { tipEl.hidden = false; tipEl.innerHTML = hover.html; tipEl.style.left = mx + "px"; tipEl.style.top = my - 10 + "px"; } else tipEl.hidden = true; });
-  const end = () => { cam.drag = null; cam.idle = performance.now(); }; cv.addEventListener("pointerup", end); cv.addEventListener("pointercancel", end);
+  const end = () => { cam.drag = null; cam.idle = performance.now(); }; cv.addEventListener("pointerup", e => { const d0 = cam.down; end();
+    if (d0 && Math.hypot(e.clientX - d0[0], e.clientY - d0[1]) < 5 && hover?.tid) openReplay(hover.tid); }); cv.addEventListener("pointercancel", end);
   cv.addEventListener("pointerleave", () => { tipEl.hidden = true; hover = null; });
   cv.addEventListener("wheel", e => { e.preventDefault(); cam.tZoom = Math.max(.55, Math.min(3.2, cam.tZoom * (e.deltaY > 0 ? .9 : 1.1))); cam.auto = false; }, { passive: false });
   cv.addEventListener("dblclick", () => { Object.assign(cam, { tYaw: cam.yaw % TAU, tPitch: .42, tZoom: 1, auto: true }); });
@@ -971,30 +1003,32 @@ const Col = (() => {
       const p3 = onOrbit(a, a.ang), p = P(...p3); if (!p) continue;
       if (ts - (a.lt || 0) > 90) { a.trail.push(p3); if (a.trail.length > 18) a.trail.shift(); a.lt = ts; }
       items.push({ z: p.z, draw: () => {
-        const rgb = a.failing ? "224,67,90" : a.hue < .33 ? "222,225,230" : a.hue < .66 ? "158,164,173" : "244,245,247", rad = Math.min(16, Math.max(2, a.size * p.k * 2.2));
+        const lag = !a.failing && mood === "ok" && a.last && Date.now() - Date.parse(a.last) > 10 * 60e3;
+        const rgb = a.failing ? "224,67,90" : lag ? "216,203,168" : "244,245,247", rad = Math.min(16, Math.max(2, a.size * p.k * 2.2));
         x.lineWidth = 1.2; for (let i = 1; i < a.trail.length; i++) { const q0 = P(...a.trail[i - 1]), q1 = P(...a.trail[i]); if (!q0 || !q1) continue;
           x.strokeStyle = `rgba(${rgb},${i / a.trail.length * .35})`; x.beginPath(); x.moveTo(q0.x, q0.y); x.lineTo(q1.x, q1.y); x.stroke(); }
         glow(p.x, p.y, rad * 3.2, rgb, a.failing ? .35 + .25 * Math.sin(ts / 160) : .22);
         sphere(p.x, p.y, rad, rgb, sun ? [Math.sign(sun.x - p.x) * .8, Math.sign(sun.y - p.y) * .8] : [0, 0]);
         if (a.failing) { x.strokeStyle = `rgba(224,67,90,${.5 + .4 * Math.sin(ts / 200)})`; x.lineWidth = 1; x.beginPath(); x.arc(p.x, p.y, rad + 4 + (ts / 60 % 8), 0, TAU); x.stroke(); }
         labels.push({ text: a.name.replace(/_/g, " ") + (a.failing ? ` ×${a.failing}` : ""), px: p.x, py: p.y - rad - 6, bad: !!a.failing, z: p.z });
-        shots.push({ x: p.x, y: p.y, rad, html: `<b>${esc(a.name)}</b><br>${a.runs ?? 0} runs · ${a.failures ?? 0} failures${a.failing ? `<br><span class="neg">failing ×${a.failing}${a.err ? " · " + esc(String(a.err).slice(0, 60)) : ""}</span>` : `<br>last ok ${a.last ? et(new Date(a.last)).hms : "—"}`}` });
+        shots.push({ x: p.x, y: p.y, rad, html: `<b>${esc(a.name)}</b><br>${a.runs ?? 0} runs · ${a.failures ?? 0} failures${lag ? `<br><span style="color:#d8cba8">lagging · no success in 10+ min</span>` : ""}${a.failing ? `<br><span class="neg">failing ×${a.failing}${a.err ? " · " + esc(String(a.err).slice(0, 60)) : ""}</span>` : `<br>last ok ${a.last ? et(new Date(a.last)).hms : "—"}`}` });
       } }); }
     // contract planets
     for (const pl of planets) { pl.ang += dt * pl.sp * pc; const p3 = onOrbit(pl, pl.ang), p = P(...p3); if (!p) continue;
-      items.push({ z: p.z, draw: () => { const rad = Math.min(20, Math.max(3, 4.6 * p.k * 2.2)), up = (pl.chg ?? 0) >= 0, rgb = "236,238,241";
-        glow(p.x, p.y, rad * 3, "158,164,173", .18); sphere(p.x, p.y, rad, "200,204,210", sun ? [Math.sign(sun.x - p.x) * .8, Math.sign(sun.y - p.y) * .8] : [0, 0]);
+      const symPnl = S.data.trades.filter(t => rootSym(t.symbol) === rootSym(pl.sym)).reduce((a, t) => a + (t.pnl || 0), 0), traded = S.data.trades.some(t => rootSym(t.symbol) === rootSym(pl.sym));
+      items.push({ z: p.z, draw: () => { const rad = Math.min(26, Math.max(3, 4.6 * p.k * 2.2 * (1 + Math.min(1, Math.abs(symPnl) / 400) * .7))), up = (pl.chg ?? 0) >= 0, rgb = "236,238,241";
+        glow(p.x, p.y, rad * 3, "158,164,173", .18); sphere(p.x, p.y, rad, !traded ? "200,204,210" : symPnl >= 0 ? "244,245,247" : "224,67,90", sun ? [Math.sign(sun.x - p.x) * .8, Math.sign(sun.y - p.y) * .8] : [0, 0]);
         x.strokeStyle = `rgba(${rgb},.35)`; x.lineWidth = 1; x.beginPath(); x.ellipse(p.x, p.y, rad * 1.9, rad * .55, -.35, 0, TAU); x.stroke();
         x.font = "600 10.5px 'JetBrains Mono', monospace"; x.textAlign = "center"; x.fillStyle = "rgba(236,238,241,.9)"; x.fillText(pl.sym, p.x, p.y + rad + 13);
         if (pl.price != null) { x.fillStyle = up ? "#f4f5f7" : "#e0435a"; x.font = "600 10px 'JetBrains Mono', monospace"; x.fillText(Number(pl.price).toLocaleString("en-US", { maximumFractionDigits: 2 }), p.x, p.y + rad + 25); }
         x.textAlign = "left";
-        shots.push({ x: p.x, y: p.y, rad, html: `<b>${esc(pl.sym)}</b>${pl.price != null ? `<br>last ${Number(pl.price).toLocaleString()}<br><span class="${up ? "pos" : "neg"}">${up ? "+" : ""}${(pl.chg || 0).toFixed(2)} session</span>` : "<br>select it above to load its chart"}` });
+        shots.push({ x: p.x, y: p.y, rad, html: `<b>${esc(pl.sym)}</b>${traded ? `<br>today <span class="${symPnl >= 0 ? "pos" : "neg"}">${money(symPnl)}</span>` : ""}${pl.price != null ? `<br>last ${Number(pl.price).toLocaleString()}<br><span class="${up ? "pos" : "neg"}">${up ? "+" : ""}${(pl.chg || 0).toFixed(2)} session</span>` : "<br>select it above to load its chart"}` });
       } }); }
     // asteroid belt
     for (const b of belt) { b.ang += dt * .045 * pc; const o = { r: R.belt + b.dr, inc: 0, node: 0 }, p3 = onOrbit(o, b.ang); p3[1] += b.y; const p = P(...p3); if (!p) continue;
       items.push({ z: p.z, draw: () => { const rgb = b.win ? "244,245,247" : "224,67,90", rad = Math.min(7, Math.max(1, b.s * p.k * 1.6));
         glow(p.x, p.y, rad * 3, rgb, .25); x.fillStyle = `rgba(${rgb},.95)`; x.beginPath(); x.arc(p.x, p.y, rad, 0, TAU); x.fill();
-        shots.push({ x: p.x, y: p.y, rad: Math.max(rad, 4), html: `<b>trade</b><br><span class="${b.win ? "pos" : "neg"}">${money(b.pnl)}</span>` }); } }); }
+        shots.push({ x: p.x, y: p.y, rad: Math.max(rad, 4), tid: b.id, html: `<b>trade</b><br><span class="${b.win ? "pos" : "neg"}">${money(b.pnl)}</span><br><i>click to replay</i>` }); } }); }
     // moons = open positions
     for (let i = 0; i < moons; i++) { const a = ts / 1000 * .9 * Math.max(pc, .15) + i / moons * TAU, p = P(Math.cos(a) * 14, Math.sin(a * 2) * 3, Math.sin(a) * 14); if (!p) continue;
       items.push({ z: p.z, draw: () => { glow(p.x, p.y, 7 * p.k * 2, "236,238,241", .35); x.fillStyle = "#f2f3f5"; x.beginPath(); x.arc(p.x, p.y, Math.max(1.6, 1.6 * p.k * 2), 0, TAU); x.fill(); } }); }
@@ -1230,6 +1264,74 @@ const Hive = (() => {
   return { resize, ingest, frame };
 })();
 
+
+/* ═════════ prop account: balance, drawdown room, target, pace ═════════ */
+const meter = (id, f, cls) => { const el = $(id); el.style.width = (Math.max(0, Math.min(1, f)) * 100).toFixed(1) + "%"; el.className = "fill " + (cls || ""); };
+function renderAccount(){
+  const d = S.data; if (!d) return; const c = d.config || {}, st = d.state || {}, eq = st.equity, dd = st.drawdown;
+  $("a-bal").textContent = eq == null ? "—" : money(eq, false);
+  $("a-bal-s").textContent = c.account_start > 0 && eq != null ? `${money(eq - c.account_start)} since start` : "account value";
+  if (c.max_drawdown > 0 && dd != null) { const used = dd / c.max_drawdown;
+    $("a-dd").textContent = money(Math.max(0, c.max_drawdown - dd), false); $("a-dd").className = "kv" + (used > .75 ? " neg" : "");
+    $("a-dd-s").textContent = `room left · ${money(dd, false)} of ${money(c.max_drawdown, false)} used`; meter("a-dd-b", used, used > .75 ? "bad" : used > .5 ? "warn" : ""); }
+  else { $("a-dd").textContent = "—"; $("a-dd-s").textContent = c.max_drawdown > 0 ? "waiting for the bot's drawdown" : "set account_max_drawdown"; meter("a-dd-b", 0); }
+  if (c.profit_target > 0 && c.account_start > 0 && eq != null) { const made = eq - c.account_start, f = made / c.profit_target, left = c.profit_target - made;
+    $("a-tg").textContent = Math.max(0, Math.round(f * 100)) + "%"; $("a-tg-s").textContent = `${money(made)} of ${money(c.profit_target, false)}`; meter("a-tg-b", f, f >= 1 ? "done" : "");
+    const today = st.day_pnl ?? d.summary?.net;
+    $("a-pace").textContent = left <= 0 ? "PASSED" : today > 0 ? `~${Math.ceil(left / today)} days` : "—";
+    $("a-pace-s").textContent = left <= 0 ? "target reached" : today > 0 ? "at today's pace (a rough guide)" : "needs a green day to estimate"; }
+  else { $("a-tg").textContent = "—"; $("a-tg-s").textContent = "set account_start + account_profit_target"; meter("a-tg-b", 0); $("a-pace").textContent = "—"; $("a-pace-s").textContent = "days to pass"; }
+}
+
+/* ═════════ feed check: missing 1-minute candles ═════════ */
+function feedCheck(){
+  const ts = (S.data?.market?.bars || []).map(b => Date.parse(b.t)).filter(Number.isFinite).sort((a, b) => a - b);
+  let gaps = 0, longest = 0;
+  for (let i = 1; i < ts.length; i++) { const g = (ts[i] - ts[i - 1]) / 60e3; if (g <= 1.5) continue;
+    const a = et(new Date(ts[i - 1])); if (a.h >= 16 && a.h < 18 && et(new Date(ts[i])).h >= 18) continue; // the daily 5-6pm halt isn't a gap
+    gaps++; longest = Math.max(longest, g - 1); }
+  const el = $("q-gap"); el.textContent = !ts.length ? "—" : gaps ? `${gaps} gap${gaps > 1 ? "s" : ""} · ${Math.round(longest)}m` : "CLEAN";
+  el.className = gaps ? "neg" : "";
+  el.title = gaps ? "Missing 1-minute candles from the feed (the daily halt is ignored). Bad data in means bad research out." : "Every minute accounted for";
+}
+
+/* ═════════ trade replay ═════════ */
+const rootSym = (v) => String(v || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3);
+function openReplay(id){
+  const t = S.data?.trades.find(x => x.id === id); if (!t) return;
+  const long = t.side === "long" || t.side === "buy", o = Date.parse(t.opened_at || t.closed_at), cl = Date.parse(t.closed_at);
+  $("rp-title").textContent = `${t.symbol} · ${long ? "LONG" : "SHORT"} ×${t.qty ?? 1}`;
+  $("rp-card").innerHTML = [["P&L", `<span class="${t.pnl >= 0 ? "pos" : "neg"}">${money(t.pnl)}</span>`], ["Entry", px(t.entry)], ["Exit", px(t.exit)],
+    ["Opened", t.opened_at ? et(new Date(o)).hms + " ET" : "—"], ["Closed", et(new Date(cl)).hms + " ET"], ["Held", t.opened_at ? dur(cl - o) : "—"], ["ID", esc(t.id)]]
+    .map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join("") +
+    `<p class="rp-note">Why Atlas took it (the setup card) appears here once Atlas reports its setups.</p>`;
+  $("replay").hidden = false; requestAnimationFrame(() => drawReplay(t, long, o, cl));
+}
+function drawReplay(t, long, o, cl){
+  const f = fit($("rpc")), x = f.x, w = f.w, h = f.h; x.clearRect(0, 0, w, h);
+  const mk = S.data.market || {}, same = rootSym(mk.symbol) === rootSym(t.symbol);
+  const pad = 15 * 60e3, bars = same ? (mk.bars || []).map(b => ({ ...b, ts: Date.parse(b.t) })).filter(b => b.ts >= o - pad && b.ts <= cl + pad) : [];
+  x.font = "12px 'JetBrains Mono', monospace"; x.fillStyle = "#a7acb3";
+  if (!bars.length) { x.fillText(same ? "No candles stored for this window." : `Select ${t.symbol} in the Market panel to replay this trade on its chart.`, 14, h / 2); return; }
+  const L = 10, Rm = 112, T = 14, B = 22, lo = Math.min(...bars.map(b => b.l), t.entry ?? Infinity, t.exit ?? Infinity), hi = Math.max(...bars.map(b => b.h), t.entry ?? -Infinity, t.exit ?? -Infinity);
+  const t0 = bars[0].ts, t1 = bars[bars.length - 1].ts + 60e3, X = (v) => L + (v - t0) / (t1 - t0) * (w - L - Rm), Y = (v) => T + (hi - v) / ((hi - lo) || 1) * (h - T - B);
+  x.fillStyle = "rgba(236,238,241,.06)"; x.fillRect(X(o), T, Math.max(2, X(cl) - X(o)), h - T - B); // time in the trade
+  const cw = Math.max(2, (w - L - Rm) / bars.length * .62);
+  for (const b of bars) { const up = b.c >= b.o, cx = X(b.ts + 30e3); x.strokeStyle = x.fillStyle = up ? "#f4f5f7" : "#e0435a";
+    x.beginPath(); x.moveTo(cx, Y(b.h)); x.lineTo(cx, Y(b.l)); x.stroke(); x.fillRect(cx - cw / 2, Y(Math.max(b.o, b.c)), cw, Math.max(1, Math.abs(Y(b.o) - Y(b.c)))); }
+  const line = (v, lab, col) => { if (v == null) return; x.setLineDash([5, 5]); x.strokeStyle = col; x.beginPath(); x.moveTo(L, Y(v)); x.lineTo(w - Rm + 4, Y(v)); x.stroke(); x.setLineDash([]);
+    x.fillStyle = col; x.font = "600 11px 'JetBrains Mono', monospace"; x.fillText(`${lab} ${px(v)}`, w - Rm + 8, Y(v) + 4); };
+  line(t.entry, "IN", "#eceef1"); line(t.exit, "OUT", t.pnl >= 0 ? "#f4f5f7" : "#e0435a");
+  const mark = (tm, v, up, col) => { if (v == null || !Number.isFinite(tm)) return; const mx = X(tm), my = Y(v); x.fillStyle = col; x.beginPath();
+    if (up) { x.moveTo(mx, my - 8); x.lineTo(mx - 6, my + 3); x.lineTo(mx + 6, my + 3); } else { x.moveTo(mx, my + 8); x.lineTo(mx - 6, my - 3); x.lineTo(mx + 6, my - 3); } x.fill(); };
+  mark(o, t.entry, long, "#eceef1"); x.fillStyle = t.pnl >= 0 ? "#f4f5f7" : "#e0435a"; x.beginPath(); x.arc(X(cl), Y(t.exit ?? t.entry), 5, 0, 7); x.fill();
+  x.fillStyle = "#8a8f97"; x.font = "10.5px 'JetBrains Mono', monospace"; x.fillText(et(new Date(t0)).hms.slice(0, 5), L, h - 6); x.textAlign = "right"; x.fillText(et(new Date(t1)).hms.slice(0, 5), w - Rm, h - 6); x.textAlign = "left";
+}
+const closeReplay = () => { $("replay").hidden = true; };
+$("rp-close").addEventListener("click", closeReplay);
+$("replay").addEventListener("click", e => { if (e.target.id === "replay") closeReplay(); });
+addEventListener("keydown", e => { if (e.key === "Escape" && !$("replay").hidden) closeReplay(); });
+$("tape").addEventListener("click", e => { const r = e.target.closest("tr[data-id]"); if (r) openReplay(r.dataset.id); });
 
 /* ═════════ live loop ═════════ */
 function tick(){
