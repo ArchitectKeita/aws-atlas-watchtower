@@ -134,6 +134,9 @@ header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 18px;margin-botto
 .win button{padding:3px 10px;border-radius:999px;font-family:var(--mono);font-size:10.5px;color:var(--mute)}
 .win button[aria-pressed=true]{color:#050506;background:var(--cyan)}
 
+/* hive */
+.hive{height:300px;border-radius:10px;overflow:hidden}
+@media (max-width:720px){.hive{height:240px}}
 /* colony universe */
 .colony{height:560px;border-radius:10px;overflow:hidden;position:relative;touch-action:none}
 .colony canvas{cursor:grab}
@@ -336,6 +339,13 @@ th{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.16em}
         <div class="legend"><span><i style="background:var(--cyan);height:7px;width:7px;border-radius:50%"></i>ant planet</span><span><i style="background:var(--green);height:6px;width:6px;border-radius:50%"></i>win</span><span><i style="background:var(--red);height:6px;width:6px;border-radius:50%"></i>loss</span><span><i style="background:#f2f3f5;height:5px;width:5px;border-radius:50%"></i>open position</span><span id="colonymood">—</span><button class="iconbtn" id="unifull" aria-pressed="false">Fullscreen</button></div>
       </div>
       <div class="cv colony"><canvas id="ant"></canvas></div>
+    </section>
+    <!-- HIVE -->
+    <section class="panel span2" aria-label="Colony hive">
+      <div class="ph"><span class="pt">Colony · Hive</span>
+        <div class="legend"><span><i style="background:#e2e5e9;height:5px;width:5px;border-radius:50%"></i>heartbeat runner</span><span><i style="background:#f4f5f7;height:6px;width:6px;transform:rotate(45deg)"></i>win cargo</span><span><i style="background:#e0435a;height:6px;width:6px;transform:rotate(45deg)"></i>loss cargo</span><span id="hivemood">—</span></div>
+      </div>
+      <div class="cv hive"><canvas id="hive"></canvas></div>
     </section>
     <!-- health -->
     <section class="panel core" id="corepanel" aria-label="Bot health">
@@ -547,7 +557,7 @@ async function load(first){
     S.data = r.body; S.fetchedAt = Date.now(); S.bot = r.body.bot; store.set("wt-bot", S.bot);
     if (!S.day) S.day = r.body.trading_day;
     const nb = beatTime(r.body); if (prevBeat && nb && nb > prevBeat) flash();
-    Col.ingest(r.body);
+    Col.ingest(r.body); Hive.ingest(r.body);
     $("toast").hidden = true;
     if (!first) render();
     return true;
@@ -647,7 +657,7 @@ const ecg = $("ecg"), eqc = $("eq");
 function fit(c){ const r = c.getBoundingClientRect(), d = Math.min(devicePixelRatio || 1, 2); c.width = Math.max(1, r.width * d); c.height = Math.max(1, r.height * d);
   const x = c.getContext("2d"); x.setTransform(d, 0, 0, d, 0, 0); return { x, w: r.width, h: r.height }; }
 let E = null, Q = null, M = null, TF = 1;
-function sizeCanvases(){ if ($("app").hidden) return; E = fit(ecg); Q = fit(eqc); M = fit($("mkc")); Col.resize(); drawEquity(); drawMarket(); }
+function sizeCanvases(){ if ($("app").hidden) return; E = fit(ecg); Q = fit(eqc); M = fit($("mkc")); Col.resize(); Hive.resize(); drawEquity(); drawMarket(); }
 addEventListener("resize", sizeCanvases);
 
 function drawECG(now){
@@ -1047,6 +1057,180 @@ $("unifull").addEventListener("click", () => { const p = $("unipanel"), on = !p.
   $("unifull").setAttribute("aria-pressed", on); $("unifull").textContent = on ? "Exit" : "Fullscreen"; requestAnimationFrame(() => Col.resize()); });
 addEventListener("keydown", e => { if (e.key === "Escape" && $("unipanel").classList.contains("full")) $("unifull").click(); });
 
+/* ═════════ colony: the bot's day as an ant farm ═════════
+   queen chamber = the bot; each heartbeat sends a runner to the surface;
+   each closed trade is food carried down to the granary (green win, red loss);
+   health sets the mood: online = busy, stale = foragers stall, offline = everyone freezes, closed = asleep. */
+const Hive = (() => {
+  const cv = $("hive"); let x = null, w = 0, h = 0;
+  // tunnel network in 0..1 space
+  const N = { gate: [.50, .16], hub: [.50, .40], queen: [.22, .70], gran: [.78, .66], nurse: [.50, .86], l: [.08, .12], r: [.92, .12],
+    d1: [.34, .30], d2: [.93, .88], d3: [.07, .92], d4: [.64, .96], d5: [.66, .28], d6: [.30, .95] };
+  const ROUTES = {
+    beat: ["queen", "hub", "gate"], food: ["gate", "hub", "gran"], patrolQ: ["queen", "hub", "nurse", "hub", "queen"],
+    patrolG: ["gran", "hub", "gate", "hub", "gran"], forageL: ["gate", "l", "gate"], forageR: ["gate", "r", "gate"],
+    d1: ["hub", "d1", "hub"], d2: ["gran", "d2", "gran"], d3: ["queen", "d3", "queen"], d4: ["nurse", "d4", "nurse"],
+    d5: ["hub", "d5", "hub"], d6: ["queen", "d6", "queen"], qg: ["queen", "hub", "gran", "hub", "queen"],
+  };
+  const P = (k) => [N[k][0] * w, N[k][1] * h];
+  let roots = [], sc = 1;
+  let ants = [], granary = [], seenT = new Set(), lastBeatSeen = 0, mood = "ok", grains = [];
+  function resize(){ if ($("app").hidden) return; const f = fit(cv); x = f.x; w = f.w; h = f.h;
+    grains = Array.from({ length: Math.round(w * h / 900) }, () => [Math.random(), Math.random() * .86 + .14, Math.random()]);
+    sc = Math.max(.8, Math.min(1.5, w / 900));
+    roots = Array.from({ length: Math.round(w / 140) }, () => { const rx = Math.random() * w, pts = [[rx, N.gate[1] * h - 6]];
+      let px = rx, py = pts[0][1]; for (let i = 0; i < 6; i++) { px += (Math.random() - .5) * 22; py += 8 + Math.random() * 14; pts.push([px, py]); } return pts; }); }
+  function path(route){ return route.map(P); }
+  function spawn(kind, opts = {}){
+    const route = ROUTES[opts.route || kind];
+    ants.push({ kind, route: opts.route || kind, seg: 0, t: Math.random() * (opts.jitter ? 1 : 0), speed: (opts.speed || 1) * (55 + Math.random() * 25),
+      cargo: opts.cargo || null, loop: !!opts.loop, wob: Math.random() * 6.28, done: false, onArrive: opts.onArrive });
+  }
+  let paused = false;
+  // every named worker gets its own tunnel, so names don't pile up on one line
+  const POSTS = { surface: ["forageL", "forageR"], stores: ["d2", "d5", "patrolG", "d1"], court: ["d3", "d6", "d4", "patrolQ", "qg"] };
+  const taken = {};
+  function routeFor(name){
+    const group = /feed|news|market/.test(name) ? "surface" : /scout|level|research|what|shadow|broker/.test(name) ? "stores" : "court";
+    const list = POSTS[group], i = (taken[group] = (taken[group] || 0) + 1) - 1;
+    return list[i % list.length];
+  }
+  function ensurePatrol(n){
+    const loops = ants.filter(a => a.loop && !a.label).length;
+    for (let i = loops; i < n; i++) { const r = ["patrolQ", "patrolG", "forageL", "forageR"][i % 4]; spawn("worker", { route: r, loop: true, jitter: true }); }
+    let extra = loops - n; ants = ants.filter(a => !(a.loop && !a.label && extra-- > 0));
+  }
+  function ingest(d){
+    const st = d.state; mood = !st ? "down" : st.health === "market closed" ? "closed" : st.health === "warning" ? "ok" : st.health;
+    $("hivemood").textContent = { ok: "units active", stale: "foragers stalled · feed frozen", down: "units offline · no heartbeat", closed: "units docked · market closed" }[mood] || "";
+    // granary reflects today's trades
+    granary = d.trades.slice(-60).map(t => t.pnl >= 0);
+    // new trades -> food carriers
+    const fresh = d.trades.filter(t => !seenT.has(t.id));
+    if (seenT.size) fresh.slice(-6).forEach((t, i) => setTimeout(() => spawn("carrier", { route: "food", cargo: t.pnl >= 0 ? "win" : "loss", speed: .9 }), i * 600));
+    d.trades.forEach(t => seenT.add(t.id));
+    // new heartbeats -> runners
+    const bt = d.beats.length ? Date.parse(d.beats[d.beats.length - 1].t) : 0;
+    if (bt > lastBeatSeen) { const n = lastBeatSeen ? Math.min(3, d.beats.filter(b => Date.parse(b.t) > lastBeatSeen).length) : 2;
+      for (let i = 0; i < n; i++) setTimeout(() => spawn("runner", { route: "beat", cargo: "pulse", speed: 1.6 }), i * 450);
+      lastBeatSeen = bt; }
+    ensurePatrol(mood === "down" ? 10 : mood === "closed" ? 6 : Math.min(22, 10 + d.trades.length));
+    // the bot's real workers (Atlas sends each ant's health from its Queen): one named ant each
+    const real = (st?.ants || []).filter(n => !["dashboard", "uplink"].includes(n.name));
+    const have = new Map(ants.filter(a => a.label).map(a => [a.label, a]));
+    for (const n of real) {
+      let a = have.get(n.name);
+      if (!a) { spawn("worker", { route: routeFor(n.name), loop: true, speed: .55 }); a = ants[ants.length - 1]; a.label = n.name;
+        a.t = (real.indexOf(n) * .37) % 1; a.seg = real.indexOf(n) % Math.max(1, ROUTES[a.route].length - 1); }
+      a.failing = n.consecutive_failures || 0;
+    }
+    ants = ants.filter(a => !a.label || real.some(n => n.name === a.label));
+    paused = !!st?.paused;
+  }
+  function drawAnt(px, py, ang, col, cargo, k){ // a small robot: armored segments, jointed legs, one eye, lit antennae
+    x.save(); x.translate(px, py); x.rotate(ang);
+    const step = Math.sin(k) * 1.8; x.strokeStyle = col; x.lineWidth = .9; x.lineJoin = "miter"; x.beginPath();
+    for (const [dx, s] of [[-2.6, 1], [0, -1], [2.6, 1]]) { // two-part legs with a knee
+      for (const side of [1, -1]) { const kx = dx + step * s * side * .6, ky = 2.6 * side; x.moveTo(dx, 0); x.lineTo(kx, ky); x.lineTo(kx + 1.4 * Math.sign(dx || 1) * .4 + step * s * side * .4, 4.6 * side); } }
+    x.stroke();
+    const seg = (cx, rx, ry) => { x.beginPath(); x.moveTo(cx - rx, 0); x.lineTo(cx - rx * .5, -ry); x.lineTo(cx + rx * .5, -ry); x.lineTo(cx + rx, 0); x.lineTo(cx + rx * .5, ry); x.lineTo(cx - rx * .5, ry); x.closePath(); };
+    x.fillStyle = "#16171a"; x.strokeStyle = col; x.lineWidth = 1;
+    seg(-4.2, 2.8, 2.1); x.fill(); x.stroke();      // abdomen (hex plate)
+    seg(-.2, 1.7, 1.4); x.fill(); x.stroke();       // thorax
+    seg(3.6, 2.1, 1.8); x.fill(); x.stroke();       // head
+    x.fillStyle = col; x.fillRect(-5.4, -.35, 2.4, .7); // abdomen light strip
+    x.shadowColor = col; x.shadowBlur = 6; x.beginPath(); x.arc(4.4, 0, .9, 0, 7); x.fill(); x.shadowBlur = 0; // eye
+    x.beginPath(); x.moveTo(5.4, -.8); x.lineTo(7, -2.2); x.lineTo(8.6, -2.6); x.moveTo(5.4, .8); x.lineTo(7, 2.2); x.lineTo(8.6, 2.6); x.stroke();
+    x.fillRect(8.3, -2.9, 1, 1); x.fillRect(8.3, 2.3, 1, 1); // antenna tips
+    if (cargo) { const c = cargo === "win" ? "#f4f5f7" : cargo === "loss" ? "#e0435a" : "#e2e5e9";
+      x.fillStyle = c; x.shadowColor = c; x.shadowBlur = 10; x.beginPath();
+      if (cargo === "pulse") x.arc(10.5, 0, 1.8, 0, 7); else { x.moveTo(10.5, -3); x.lineTo(13, 0); x.lineTo(10.5, 3); x.lineTo(8.6, 0); x.closePath(); }
+      x.fill(); x.shadowBlur = 0; }
+    x.restore();
+  }
+  let last = 0;
+  function frame(ts){
+    if (!x || $("app").hidden || !S.data) return;
+    const dt = Math.min(.05, (ts - last) / 1000 || 0); last = ts;
+    const tint = { ok: "222,225,230", stale: "216,203,168", down: "224,67,90", closed: "170,175,183" }[mood];
+    const pace = { ok: 1, stale: .45, down: 0, closed: .18 }[mood];
+    x.clearRect(0, 0, w, h);
+    // soil
+    const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, "#0b0c0e"); g.addColorStop(.14, "#0d0e10"); g.addColorStop(1, "#050506");
+    x.fillStyle = g; x.fillRect(0, 0, w, h);
+    for (const [gx, gy, gz] of grains) { x.fillStyle = `rgba(${gz > .9 ? "200,204,210" : "170,175,183"},${.04 + gz * .06})`; x.fillRect(gx * w, gy * h, 1.4, 1.4); }
+    // surface line + grass
+    const sy = N.gate[1] * h - 6; x.strokeStyle = `rgba(${tint},.45)`; x.lineWidth = 1; x.beginPath(); x.moveTo(0, sy); x.lineTo(w, sy); x.stroke();
+    x.strokeStyle = "rgba(222,225,230,.22)"; x.beginPath();
+    for (let gx = 6; gx < w; gx += 18) { const hh = 4 + ((gx * 13) % 9); x.moveTo(gx, sy); x.lineTo(gx, sy - hh); x.fillStyle = `rgba(222,225,230,${.25 + .5 * ((Math.sin(ts / 400 + gx) + 1) / 2)})`; x.fillRect(gx - 1, sy - hh - 2, 2, 2); } x.stroke();
+    x.fillStyle = "rgba(236,238,241,.45)"; x.font = "10.5px 'JetBrains Mono', monospace"; x.fillText("SURFACE · MARKET FEED", 10, sy - 10);
+    // tunnels
+    x.lineCap = "round"; x.lineJoin = "round";
+    // roots hanging from the grass
+    x.strokeStyle = "rgba(222,225,230,.07)"; x.lineWidth = 1;
+    for (const r of roots) { x.beginPath(); r.forEach(([rx, ry], i) => i ? x.lineTo(rx, ry) : x.moveTo(rx, ry)); x.stroke(); }
+    const tun = [["gate", "hub"], ["hub", "queen"], ["hub", "gran"], ["hub", "nurse"], ["gate", "l"], ["gate", "r"],
+                 ["hub", "d1"], ["gran", "d2"], ["queen", "d3"], ["nurse", "d4"], ["hub", "d5"], ["queen", "d6"]];
+    for (const pass of [[13 * sc, "rgba(0,0,0,.55)"], [9 * sc, "#121316"], [1.2, `rgba(${tint},.35)`]]) {
+      x.lineWidth = pass[0]; x.strokeStyle = pass[1];
+      for (const [a, b] of tun) { if ((a === "gate" && (b === "l" || b === "r"))) continue; const [ax, ay] = P(a), [bx, by] = P(b);
+        x.beginPath(); x.moveTo(ax, ay); x.quadraticCurveTo((ax + bx) / 2 + (bx - ax) * .15, (ay + by) / 2, bx, by); x.stroke(); } }
+    // chambers
+    const ch = [["queen", 46, 22, `CORE · ${(S.data.bot || "bot").toUpperCase()}`], ["gran", 52, 24, "VAULT"], ["nurse", 36, 16, "BAY"], ["hub", 20, 12, ""]];
+    for (const [k, rx0, ry0, label] of ch) { const [cx, cy] = P(k), rx = rx0 * sc, ry = ry0 * sc;
+      x.fillStyle = "#121316"; x.beginPath(); for (let q = 0; q < 6; q++) { const an = q / 6 * 6.2832; x.lineTo(cx + Math.cos(an) * rx, cy + Math.sin(an) * ry); } x.closePath(); x.fill();
+      x.strokeStyle = `rgba(${tint},.35)`; x.lineWidth = 1; x.stroke();
+      if (label) { x.fillStyle = "rgba(236,238,241,.55)"; x.font = "10px 'JetBrains Mono', monospace"; x.textAlign = "center"; x.fillText(label, cx, cy + ry + 14); x.textAlign = "left"; } }
+    // the queen: pulses with the heartbeat, stills when it stops
+    { const [qx, qy] = P("queen"), beat = mood === "down" ? 0 : (Math.sin(ts / (mood === "closed" ? 1400 : 420)) + 1) / 2;
+      x.save(); x.translate(qx, qy); x.scale(1.9 * sc, 1.9 * sc); drawAnt(0, 0, 0, `rgba(${tint},${.75 + beat * .25})`, null, ts / 300 * pace); x.restore();
+      x.fillStyle = `rgba(${tint},${.08 + beat * .18})`; x.beginPath(); x.ellipse(qx, qy, 40 * sc, 18 * sc, 0, 0, 7); x.fill(); }
+    // granary pile: one seed per trade
+    { const [gx, gy] = P("gran"); granary.forEach((win, i) => { const row = Math.floor(i / 12), col = i % 12;
+        x.fillStyle = win ? "rgba(244,245,247,.95)" : "rgba(224,67,90,.95)";
+        x.beginPath(); x.arc(gx - 33 + col * 6 + (row % 2) * 3, gy + 14 - row * 5, 2.4, 0, 7); x.fill(); });
+      const pnl = S.data.state?.day_pnl ?? S.data.summary?.net; if (pnl != null) { x.fillStyle = pnl >= 0 ? "#f4f5f7" : "#e0435a"; x.font = "600 11px 'JetBrains Mono', monospace";
+        x.textAlign = "center"; x.fillText(money(pnl), gx, gy - 30); x.textAlign = "left"; } }
+    // nursery eggs = open positions
+    { const [nx, ny] = P("nurse"), n = Math.min(6, S.data.state?.open_positions || 0);
+      for (let i = 0; i < n; i++) { x.fillStyle = "rgba(236,238,241,.85)"; x.beginPath(); x.ellipse(nx - 12 + i * 5, ny + 3, 2, 3, .3, 0, 7); x.fill(); } }
+    // ants
+    const labels = [];
+    for (const a of ants) {
+      const pts = path(ROUTES[a.route]); const [p0, p1] = [pts[a.seg], pts[a.seg + 1]];
+      if (!p1) { a.done = true; continue; }
+      const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
+      const step = a.failing || (a.kind === "worker" && mood === "stale" && (a.route === "forageL" || a.route === "forageR")) ? 0 : a.speed * dt * pace;
+      a.t += step / len; a.wob += step * .4;
+      if (a.t >= 1) { a.t = 0; a.seg++; if (a.seg >= pts.length - 1) { if (a.loop) a.seg = 0; else { a.done = true; continue; } } }
+      const px = p0[0] + (p1[0] - p0[0]) * a.t, py = p0[1] + (p1[1] - p0[1]) * a.t + Math.sin(a.wob) * 1.2;
+      const col = a.failing ? "#e0435a" : a.kind === "runner" ? "#e2e5e9" : a.label ? "#ffffff" : mood === "down" ? "rgba(224,67,90,.75)" : "rgba(200,204,210,.55)";
+      x.save(); x.translate(px, py); x.scale(sc, sc); drawAnt(0, 0, Math.atan2(p1[1] - p0[1], p1[0] - p0[0]), col, a.cargo, a.wob * 3);
+      x.restore();
+      if (a.label) labels.push({ text: a.label.replace(/_/g, " ") + (a.failing ? ` ×${a.failing}` : ""), px, py: py - 9 * sc, bad: !!a.failing });
+      x.save(); x.restore();
+    }
+    // names: failing ones first, and never two on top of each other
+    x.font = "600 9.5px 'JetBrains Mono', monospace"; x.textAlign = "center";
+    const placed = [];
+    for (const L of labels.sort((p, q) => q.bad - p.bad)) {
+      const wdt = x.measureText(L.text).width + 6;
+      if (placed.some(o => Math.abs(o.px - L.px) < (o.w + wdt) / 2 && Math.abs(o.py - L.py) < 12)) continue;
+      placed.push({ px: L.px, py: L.py, w: wdt });
+      x.fillStyle = "rgba(5,5,6,.8)"; x.fillRect(L.px - wdt / 2, L.py - 9, wdt, 12);
+      x.fillStyle = L.bad ? "#e0435a" : "rgba(236,238,241,.85)"; x.fillText(L.text, L.px, L.py);
+    }
+    x.textAlign = "left";
+    ants = ants.filter(a => !a.done);
+    if (paused && mood !== "down") { const [qx, qy] = P("queen"); x.fillStyle = "#d8cba8"; x.font = "600 10.5px 'JetBrains Mono', monospace";
+      x.textAlign = "center"; x.fillText("⏸ PAUSED · kill switch on", qx, qy - 30 * sc); x.textAlign = "left"; }
+    if (mood === "down") { x.fillStyle = "rgba(224,67,90,.07)"; x.fillRect(0, 0, w, h);
+      x.fillStyle = "#e0435a"; x.font = "600 12px 'JetBrains Mono', monospace"; x.textAlign = "right"; x.fillText("ALL UNITS OFFLINE", w - 12, h - 12); x.textAlign = "left"; }
+  }
+  return { resize, ingest, frame };
+})();
+
+
 /* ═════════ live loop ═════════ */
 function tick(){
   const now = Date.now(), n = new Date(now);
@@ -1064,7 +1248,7 @@ function tick(){
   if (S.key && d && now >= S.nextSync) { S.nextSync = now + REFRESH * 1000; load(); }
 }
 setInterval(tick, 250);
-(function loop(t){ drawECG(Date.now()); Col.frame(t); requestAnimationFrame(loop); })();
+(function loop(t){ drawECG(Date.now()); Col.frame(t); Hive.frame(t); requestAnimationFrame(loop); })();
 
 /* ═════════ start ═════════ */
 (async () => {
