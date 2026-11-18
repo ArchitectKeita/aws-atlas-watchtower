@@ -134,9 +134,12 @@ header{display:flex;flex-wrap:wrap;align-items:center;gap:12px 18px;margin-botto
 .win button{padding:3px 10px;border-radius:999px;font-family:var(--mono);font-size:10.5px;color:var(--mute)}
 .win button[aria-pressed=true]{color:#05060f;background:var(--cyan)}
 
-/* colony */
-.colony{height:300px;border-radius:10px;overflow:hidden}
-@media (max-width:720px){.colony{height:240px}}
+/* colony universe */
+.colony{height:560px;border-radius:10px;overflow:hidden;position:relative;touch-action:none}
+.colony canvas{cursor:grab}
+@media (max-width:720px){.colony{height:420px}}
+#unipanel.full{position:fixed;inset:0;z-index:60;border-radius:0;margin:0;display:flex;flex-direction:column;background:#01030a}
+#unipanel.full .colony{flex:1;height:auto;border-radius:0}
 /* market */
 .syms{display:inline-flex;flex-wrap:wrap;gap:4px;margin-right:auto;margin-left:6px}
 .syms button{padding:3px 10px;border:1px solid var(--line2);border-radius:999px;font-family:var(--mono);font-size:11px;color:var(--mute)}
@@ -321,6 +324,13 @@ th{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.16em}
   </header>
 
   <div class="grid">
+    <!-- COLONY -->
+    <section class="panel span2" aria-label="Colony universe" id="unipanel">
+      <div class="ph"><span class="pt">Colony · Universe</span>
+        <div class="legend"><span><i style="background:var(--cyan);height:7px;width:7px;border-radius:50%"></i>ant planet</span><span><i style="background:var(--green);height:6px;width:6px;border-radius:50%"></i>win</span><span><i style="background:var(--red);height:6px;width:6px;border-radius:50%"></i>loss</span><span><i style="background:#eef0ff;height:5px;width:5px;border-radius:50%"></i>open position</span><span id="colonymood">—</span><button class="iconbtn" id="unifull" aria-pressed="false">Fullscreen</button></div>
+      </div>
+      <div class="cv colony"><canvas id="ant"></canvas></div>
+    </section>
     <!-- health -->
     <section class="panel core" id="corepanel" aria-label="Bot health">
       <div class="ph" style="width:100%"><span class="pt">Bot health</span><span class="sub" id="ver">—</span></div>
@@ -391,13 +401,6 @@ th{font-family:var(--disp);font-weight:600;font-size:12px;letter-spacing:.16em}
       <div class="cv mkt" id="mkwrap"><canvas id="mkc"></canvas><div class="tip" id="mtip" hidden></div></div>
     </section>
 
-    <!-- COLONY -->
-    <section class="panel span2" aria-label="Colony">
-      <div class="ph"><span class="pt">Colony</span>
-        <div class="legend"><span><i style="background:var(--cyan)"></i>heartbeat runner</span><span><i style="background:var(--green);height:6px;width:6px;border-radius:50%"></i>winning trade</span><span><i style="background:var(--red);height:6px;width:6px;border-radius:50%"></i>losing trade</span><span id="colonymood">—</span></div>
-      </div>
-      <div class="cv colony"><canvas id="ant"></canvas></div>
-    </section>
 
     <!-- ECG -->
     <section class="panel span2" aria-label="Heartbeat monitor">
@@ -835,170 +838,208 @@ $("mkwrap").addEventListener("mouseleave", () => { $("mtip").hidden = true; });
 
 
 
-/* ═════════ colony: the bot's day as an ant farm ═════════
-   queen chamber = the bot; each heartbeat sends a runner to the surface;
-   each closed trade is food carried down to the granary (green win, red loss);
-   health sets the mood: online = busy, stale = foragers stall, offline = everyone freezes, closed = asleep. */
+/* ═════════ colony, reinvented: the bot as a living star system ═════════
+   A tiny 3D engine (perspective camera, depth sort) drawn on a 2D canvas, so no outside scripts are needed.
+   star          = the bot. It beats with every heartbeat and goes dark when the heartbeats stop.
+   planets       = the bot's real ants (from its Queen), one orbit each. A failing ant turns red and its orbit stops.
+   shockwave     = a heartbeat. A photon carries it out to the market.
+   comets        = closed trades, crashing into the asteroid belt: green rocks are wins, red are losses.
+   moons         = open positions.   outer planets = the contracts the bot watches, with the live price. */
 const Col = (() => {
-  const cv = $("ant"); let x = null, w = 0, h = 0;
-  // tunnel network in 0..1 space
-  const N = { gate: [.50, .16], hub: [.50, .40], queen: [.22, .70], gran: [.78, .66], nurse: [.50, .86], l: [.08, .12], r: [.92, .12],
-    d1: [.34, .30], d2: [.93, .88], d3: [.07, .92], d4: [.64, .96], d5: [.66, .28], d6: [.30, .95] };
-  const ROUTES = {
-    beat: ["queen", "hub", "gate"], food: ["gate", "hub", "gran"], patrolQ: ["queen", "hub", "nurse", "hub", "queen"],
-    patrolG: ["gran", "hub", "gate", "hub", "gran"], forageL: ["gate", "l", "gate"], forageR: ["gate", "r", "gate"],
-    d1: ["hub", "d1", "hub"], d2: ["gran", "d2", "gran"], d3: ["queen", "d3", "queen"], d4: ["nurse", "d4", "nurse"],
-    d5: ["hub", "d5", "hub"], d6: ["queen", "d6", "queen"], qg: ["queen", "hub", "gran", "hub", "queen"],
-  };
-  const P = (k) => [N[k][0] * w, N[k][1] * h];
-  let roots = [], sc = 1;
-  let ants = [], granary = [], seenT = new Set(), lastBeatSeen = 0, mood = "ok", grains = [];
-  function resize(){ if ($("app").hidden) return; const f = fit(cv); x = f.x; w = f.w; h = f.h;
-    grains = Array.from({ length: Math.round(w * h / 900) }, () => [Math.random(), Math.random() * .86 + .14, Math.random()]);
-    sc = Math.max(.8, Math.min(1.5, w / 900));
-    roots = Array.from({ length: Math.round(w / 140) }, () => { const rx = Math.random() * w, pts = [[rx, N.gate[1] * h - 6]];
-      let px = rx, py = pts[0][1]; for (let i = 0; i < 6; i++) { px += (Math.random() - .5) * 22; py += 8 + Math.random() * 14; pts.push([px, py]); } return pts; }); }
-  function path(route){ return route.map(P); }
-  function spawn(kind, opts = {}){
-    const route = ROUTES[opts.route || kind];
-    ants.push({ kind, route: opts.route || kind, seg: 0, t: Math.random() * (opts.jitter ? 1 : 0), speed: (opts.speed || 1) * (55 + Math.random() * 25),
-      cargo: opts.cargo || null, loop: !!opts.loop, wob: Math.random() * 6.28, done: false, onArrive: opts.onArrive });
-  }
-  let paused = false;
-  // every named worker gets its own tunnel, so names don't pile up on one line
-  const POSTS = { surface: ["forageL", "forageR"], stores: ["d2", "d5", "patrolG", "d1"], court: ["d3", "d6", "d4", "patrolQ", "qg"] };
-  const taken = {};
-  function routeFor(name){
-    const group = /feed|news|market/.test(name) ? "surface" : /scout|level|research|what|shadow|broker/.test(name) ? "stores" : "court";
-    const list = POSTS[group], i = (taken[group] = (taken[group] || 0) + 1) - 1;
-    return list[i % list.length];
-  }
-  function ensurePatrol(n){
-    const loops = ants.filter(a => a.loop && !a.label).length;
-    for (let i = loops; i < n; i++) { const r = ["patrolQ", "patrolG", "forageL", "forageR"][i % 4]; spawn("worker", { route: r, loop: true, jitter: true }); }
-    let extra = loops - n; ants = ants.filter(a => !(a.loop && !a.label && extra-- > 0));
-  }
+  const cv = $("ant"), wrap = cv.parentElement; let x = null, w = 0, h = 0, dpr = 1;
+  const tipEl = document.createElement("div"); tipEl.className = "tip"; tipEl.hidden = true; wrap.appendChild(tipEl);
+  const TAU = Math.PI * 2, rnd = (s) => { let t = s; return () => ((t = (t * 9301 + 49297) % 233280) / 233280); };
+  const hash = (s) => { let v = 7; for (const c of s) v = (v * 31 + c.charCodeAt(0)) % 100003; return v; };
+  // camera
+  const cam = { yaw: .6, pitch: .42, zoom: 1, tYaw: .6, tPitch: .42, tZoom: 1, auto: true, drag: null };
+  let mood = "ok", paused = false, ants = [], planets = [], belt = [], comets = [], waves = [], photons = [], moons = 0, seenT = new Set(), lastBeatSeen = 0;
+  let R = { ant0: 34, gap: 9, belt: 60, mkt: 84 }, hover = null, shots = [];
+  // galaxy: two-armed spiral of stars around the system, plus a far halo
+  const galaxy = (() => { const r = rnd(42), out = [];
+    for (let i = 0; i < 2600; i++) { const arm = i % 2, d = 140 + Math.pow(r(), .55) * 900, a = arm * Math.PI + d * .0062 + (r() - .5) * .9;
+      out.push({ x: Math.cos(a) * d, y: (r() - .5) * (30 + d * .06), z: Math.sin(a) * d, s: r() < .06 ? 1.8 : .9, c: r() < .25 ? [155, 123, 255] : r() < .5 ? [95, 227, 255] : [231, 233, 251], b: .25 + r() * .75 }); }
+    for (let i = 0; i < 500; i++) { const u = r() * TAU, v = Math.acos(2 * r() - 1), d = 1300 + r() * 500;
+      out.push({ x: d * Math.sin(v) * Math.cos(u), y: d * Math.cos(v), z: d * Math.sin(v) * Math.sin(u), s: .8, c: [231, 233, 251], b: .2 + r() * .5 }); }
+    return out; })();
+  const tint = () => ({ ok: [95, 227, 255], stale: [255, 182, 72], down: [255, 77, 94], closed: [123, 140, 255] }[mood]);
+  const pace = () => ({ ok: 1, stale: .45, down: 0, closed: .2 }[mood]);
+  // projection
+  let cx = 0, cy = 0, F = 1, D = 1, cyw = 1, syw = 0, cp = 1, sp = 0;
+  function setCam(){ cyw = Math.cos(cam.yaw); syw = Math.sin(cam.yaw); cp = Math.cos(cam.pitch); sp = Math.sin(cam.pitch);
+    cx = w / 2; cy = h / 2 + h * .04; D = R.mkt * 2.7 / cam.zoom; F = Math.min(w, h * 1.5) * .95; }
+  function P(px, py, pz){ const x1 = px * cyw - pz * syw, z1 = px * syw + pz * cyw;
+    const y2 = py * cp - z1 * sp, z2 = py * sp + z1 * cp, dep = D + z2; if (dep < 4) return null;
+    const k = F / dep; return { x: cx + x1 * k, y: cy - y2 * k, k, z: z2 }; }
+  const onOrbit = (o, ang) => { const ca = Math.cos(ang), sa = Math.sin(ang), x0 = ca * o.r, z0 = sa * o.r;
+    const y1 = -z0 * Math.sin(o.inc), z1 = z0 * Math.cos(o.inc); // tilt about X, then turn the node
+    return [x0 * Math.cos(o.node) - z1 * Math.sin(o.node), y1, x0 * Math.sin(o.node) + z1 * Math.cos(o.node)]; };
+  function resize(){ if ($("app").hidden) return; const r = cv.getBoundingClientRect(); dpr = Math.min(devicePixelRatio || 1, 2);
+    cv.width = Math.max(1, r.width * dpr); cv.height = Math.max(1, r.height * dpr); x = cv.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0); w = r.width; h = r.height; }
+  function layout(){ R.belt = R.ant0 + Math.max(1, ants.length) * R.gap + 12; R.mkt = R.belt + 26;
+    ants.forEach((a, i) => a.r = R.ant0 + i * R.gap); planets.forEach((p, i) => { p.r = R.mkt + (i % 2) * 6; }); }
   function ingest(d){
     const st = d.state; mood = !st ? "down" : st.health === "market closed" ? "closed" : st.health === "warning" ? "ok" : st.health;
-    $("colonymood").textContent = { ok: "colony busy", stale: "foragers stalled · feed frozen", down: "colony frozen · no heartbeat", closed: "colony asleep · market closed" }[mood] || "";
-    // granary reflects today's trades
-    granary = d.trades.slice(-60).map(t => t.pnl >= 0);
-    // new trades -> food carriers
-    const fresh = d.trades.filter(t => !seenT.has(t.id));
-    if (seenT.size) fresh.slice(-6).forEach((t, i) => setTimeout(() => spawn("carrier", { route: "food", cargo: t.pnl >= 0 ? "win" : "loss", speed: .9 }), i * 600));
-    d.trades.forEach(t => seenT.add(t.id));
-    // new heartbeats -> runners
-    const bt = d.beats.length ? Date.parse(d.beats[d.beats.length - 1].t) : 0;
-    if (bt > lastBeatSeen) { const n = lastBeatSeen ? Math.min(3, d.beats.filter(b => Date.parse(b.t) > lastBeatSeen).length) : 2;
-      for (let i = 0; i < n; i++) setTimeout(() => spawn("runner", { route: "beat", cargo: "pulse", speed: 1.6 }), i * 450);
-      lastBeatSeen = bt; }
-    ensurePatrol(mood === "down" ? 10 : mood === "closed" ? 6 : Math.min(22, 10 + d.trades.length));
-    // the bot's real workers (Atlas sends each ant's health from its Queen): one named ant each
+    paused = !!st?.paused; moons = Math.min(6, st?.open_positions || 0);
+    $("colonymood").textContent = { ok: "system alive", stale: "feed frozen · orbits slowing", down: "star dark · no heartbeat", closed: "market closed · system asleep" }[mood] || "";
+    // planets = the real ants
     const real = (st?.ants || []).filter(n => !["dashboard", "uplink"].includes(n.name));
-    const have = new Map(ants.filter(a => a.label).map(a => [a.label, a]));
-    for (const n of real) {
-      let a = have.get(n.name);
-      if (!a) { spawn("worker", { route: routeFor(n.name), loop: true, speed: .55 }); a = ants[ants.length - 1]; a.label = n.name;
-        a.t = (real.indexOf(n) * .37) % 1; a.seg = real.indexOf(n) % Math.max(1, ROUTES[a.route].length - 1); }
-      a.failing = n.consecutive_failures || 0;
-    }
-    ants = ants.filter(a => !a.label || real.some(n => n.name === a.label));
-    paused = !!st?.paused;
+    const have = new Map(ants.map(a => [a.name, a])); ants = real.map((n, i) => { const a = have.get(n.name) || (() => { const r = rnd(hash(n.name));
+        return { name: n.name, ang: r() * TAU, inc: (r() - .5) * .5, node: r() * TAU, sp: .16 + r() * .22, size: 2.2 + r() * 1.6, trail: [], hue: r() }; })();
+      Object.assign(a, { failing: n.consecutive_failures || 0, runs: n.runs, failures: n.failures, last: n.last_success, err: n.last_error }); return a; });
+    // contracts on the outer ring
+    const syms = d.market?.symbols?.length ? d.market.symbols : d.market?.symbol ? [d.market.symbol] : [];
+    const havep = new Map(planets.map(p => [p.sym, p])); planets = syms.slice(0, 8).map((s, i) => { const p = havep.get(s) || { sym: s, ang: i / Math.max(1, syms.length) * TAU, inc: .06, node: .3, sp: .05 };
+      const bars = s === d.market?.symbol ? d.market.bars || [] : null; if (bars?.length) { const c = bars[bars.length - 1], o = bars[0]; p.price = c.c ?? c[4]; p.chg = (p.price - (o.o ?? o[1])); } return p; });
+    layout();
+    // belt = today's trades; new ones arrive as comets
+    const trades = d.trades.slice(-80), fresh = trades.filter(t => !seenT.has(t.id)), first = !seenT.size;
+    trades.forEach((t, i) => { if (first || !fresh.includes(t)) addRock(t, i); });
+    fresh.slice(-6).forEach((t, i) => { if (!first) setTimeout(() => launch(t, trades.indexOf(t)), i * 700); });
+    d.trades.forEach(t => seenT.add(t.id));
+    // heartbeats
+    const bt = d.beats.length ? Date.parse(d.beats[d.beats.length - 1].t) : 0;
+    if (bt > lastBeatSeen) { if (lastBeatSeen) { pulse(); beatGlow = 1; } else setTimeout(() => { pulse(); beatGlow = 1; }, 700); lastBeatSeen = bt; }
   }
-  function drawAnt(px, py, ang, col, cargo, k){
-    x.save(); x.translate(px, py); x.rotate(ang);
-    const leg = Math.sin(k) * 2.2; x.strokeStyle = col; x.lineWidth = .9; x.beginPath();
-    for (const [dx, s] of [[-2.5, 1], [0, -1], [2.5, 1]]) { x.moveTo(dx, 0); x.lineTo(dx + leg * s, 4.2); x.moveTo(dx, 0); x.lineTo(dx - leg * s, -4.2); }
-    x.stroke(); x.fillStyle = col;
-    x.beginPath(); x.ellipse(-4, 0, 2.6, 2, 0, 0, 7); x.fill();
-    x.beginPath(); x.ellipse(0, 0, 1.8, 1.4, 0, 0, 7); x.fill();
-    x.beginPath(); x.ellipse(3.6, 0, 2, 1.7, 0, 0, 7); x.fill();
-    x.beginPath(); x.moveTo(5, -1); x.lineTo(7.5, -3.2); x.moveTo(5, 1); x.lineTo(7.5, 3.2); x.stroke();
-    if (cargo) { const c = cargo === "win" ? "#3ff2c8" : cargo === "loss" ? "#ff4d5e" : "#5fe3ff";
-      x.fillStyle = c; x.shadowColor = c; x.shadowBlur = 10; x.beginPath(); x.arc(7.8, 0, cargo === "pulse" ? 2.3 : 3, 0, 7); x.fill(); x.shadowBlur = 0; }
-    x.restore();
-  }
-  let last = 0;
+  function addRock(t, i){ if (belt.some(b => b.id === t.id)) return; const r = rnd(hash(t.id));
+    belt.push({ id: t.id, win: t.pnl >= 0, pnl: t.pnl, ang: i * 2.39996 + r() * .3, dr: (r() - .5) * 7, y: (r() - .5) * 3, s: 1.3 + Math.min(2.6, Math.abs(t.pnl || 0) / 120) }); }
+  function launch(t, i){ const a = Math.random() * TAU, far = R.mkt * 1.9;
+    comets.push({ t, i, x0: Math.cos(a) * far, y0: 30 + Math.random() * 40, z0: Math.sin(a) * far, life: 0, dur: 2.4, win: t.pnl >= 0 }); }
+  function pulse(){ waves.push({ life: 0 }); if (planets.length) photons.push({ life: 0, to: planets[Math.floor(Math.random() * planets.length)] }); }
+  // ---------------------------------------------------------------- interaction
+  cv.addEventListener("pointerdown", e => { cam.drag = { x: e.clientX, y: e.clientY, yaw: cam.tYaw, pitch: cam.tPitch }; cam.auto = false; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e => { const r = cv.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    if (cam.drag) { cam.tYaw = cam.drag.yaw + (e.clientX - cam.drag.x) * .006; cam.tPitch = Math.max(.12, Math.min(1.35, cam.drag.pitch + (e.clientY - cam.drag.y) * .005)); }
+    hover = null; let best = 16; for (const s of shots) { const dd = Math.hypot(s.x - mx, s.y - my); if (dd < Math.max(best, s.rad + 4)) { best = dd; hover = s; } }
+    cv.style.cursor = hover ? "pointer" : cam.drag ? "grabbing" : "grab";
+    if (hover) { tipEl.hidden = false; tipEl.innerHTML = hover.html; tipEl.style.left = mx + "px"; tipEl.style.top = my - 10 + "px"; } else tipEl.hidden = true; });
+  const end = () => { cam.drag = null; cam.idle = performance.now(); }; cv.addEventListener("pointerup", end); cv.addEventListener("pointercancel", end);
+  cv.addEventListener("pointerleave", () => { tipEl.hidden = true; hover = null; });
+  cv.addEventListener("wheel", e => { e.preventDefault(); cam.tZoom = Math.max(.55, Math.min(3.2, cam.tZoom * (e.deltaY > 0 ? .9 : 1.1))); cam.auto = false; }, { passive: false });
+  cv.addEventListener("dblclick", () => { Object.assign(cam, { tYaw: cam.yaw % TAU, tPitch: .42, tZoom: 1, auto: true }); });
+  // ---------------------------------------------------------------- draw helpers
+  function glow(px, py, rad, rgb, a){ const g = x.createRadialGradient(px, py, 0, px, py, rad); g.addColorStop(0, `rgba(${rgb},${a})`); g.addColorStop(1, `rgba(${rgb},0)`);
+    x.fillStyle = g; x.beginPath(); x.arc(px, py, rad, 0, TAU); x.fill(); }
+  function sphere(px, py, rad, rgb, lit){ // shaded toward the star
+    const g = x.createRadialGradient(px + lit[0] * rad * .45, py + lit[1] * rad * .45, rad * .1, px, py, rad);
+    g.addColorStop(0, `rgba(255,255,255,.95)`); g.addColorStop(.35, `rgba(${rgb},1)`); g.addColorStop(1, `rgba(${rgb.split(",").map(v => Math.round(v * .18)).join(",")},1)`);
+    x.fillStyle = g; x.beginPath(); x.arc(px, py, rad, 0, TAU); x.fill(); }
+  function ring(o, rgb, a, dash){ x.strokeStyle = `rgba(${rgb},${a})`; x.lineWidth = 1; if (dash) x.setLineDash(dash); x.beginPath(); let first = true;
+    for (let i = 0; i <= 96; i++) { const p3 = onOrbit(o, i / 96 * TAU), p = P(...p3); if (!p) { first = true; continue; } first ? x.moveTo(p.x, p.y) : x.lineTo(p.x, p.y); first = false; }
+    x.stroke(); x.setLineDash([]); }
+  const RGB = (a) => a.join(",");
+  // ---------------------------------------------------------------- frame
+  let last = 0, beatGlow = 0;
   function frame(ts){
     if (!x || $("app").hidden || !S.data) return;
-    const dt = Math.min(.05, (ts - last) / 1000 || 0); last = ts;
-    const tint = { ok: "95,227,255", stale: "255,182,72", down: "255,77,94", closed: "47,168,255" }[mood];
-    const pace = { ok: 1, stale: .45, down: 0, closed: .18 }[mood];
-    x.clearRect(0, 0, w, h);
-    // soil
-    const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, "#031522"); g.addColorStop(.14, "#04192a"); g.addColorStop(1, "#020a12");
-    x.fillStyle = g; x.fillRect(0, 0, w, h);
-    for (const [gx, gy, gz] of grains) { x.fillStyle = `rgba(${gz > .9 ? "155,123,255" : "148,160,255"},${.04 + gz * .06})`; x.fillRect(gx * w, gy * h, 1.4, 1.4); }
-    // surface line + grass
-    const sy = N.gate[1] * h - 6; x.strokeStyle = `rgba(${tint},.45)`; x.lineWidth = 1; x.beginPath(); x.moveTo(0, sy); x.lineTo(w, sy); x.stroke();
-    x.strokeStyle = "rgba(63,242,200,.35)"; x.beginPath();
-    for (let gx = 4; gx < w; gx += 7) { const hh = 3 + ((gx * 13) % 7); x.moveTo(gx, sy); x.lineTo(gx + Math.sin(ts / 900 + gx) * 1.5, sy - hh); } x.stroke();
-    x.fillStyle = "rgba(231,233,251,.45)"; x.font = "10.5px 'JetBrains Mono', monospace"; x.fillText("SURFACE · MARKET", 10, sy - 10);
-    // tunnels
-    x.lineCap = "round"; x.lineJoin = "round";
-    // roots hanging from the grass
-    x.strokeStyle = "rgba(63,242,200,.10)"; x.lineWidth = 1;
-    for (const r of roots) { x.beginPath(); r.forEach(([rx, ry], i) => i ? x.lineTo(rx, ry) : x.moveTo(rx, ry)); x.stroke(); }
-    const tun = [["gate", "hub"], ["hub", "queen"], ["hub", "gran"], ["hub", "nurse"], ["gate", "l"], ["gate", "r"],
-                 ["hub", "d1"], ["gran", "d2"], ["queen", "d3"], ["nurse", "d4"], ["hub", "d5"], ["queen", "d6"]];
-    for (const pass of [[13 * sc, "rgba(0,0,0,.55)"], [9 * sc, "#06202f"], [1.2, `rgba(${tint},.35)`]]) {
-      x.lineWidth = pass[0]; x.strokeStyle = pass[1];
-      for (const [a, b] of tun) { if ((a === "gate" && (b === "l" || b === "r"))) continue; const [ax, ay] = P(a), [bx, by] = P(b);
-        x.beginPath(); x.moveTo(ax, ay); x.quadraticCurveTo((ax + bx) / 2 + (bx - ax) * .15, (ay + by) / 2, bx, by); x.stroke(); } }
-    // chambers
-    const ch = [["queen", 46, 22, `QUEEN · ${(S.data.bot || "bot").toUpperCase()}`], ["gran", 52, 24, "GRANARY"], ["nurse", 36, 16, "NURSERY"], ["hub", 20, 12, ""]];
-    for (const [k, rx0, ry0, label] of ch) { const [cx, cy] = P(k), rx = rx0 * sc, ry = ry0 * sc;
-      x.fillStyle = "#06202f"; x.beginPath(); x.ellipse(cx, cy, rx, ry, 0, 0, 7); x.fill();
-      x.strokeStyle = `rgba(${tint},.35)`; x.lineWidth = 1; x.stroke();
-      if (label) { x.fillStyle = "rgba(231,233,251,.55)"; x.font = "10px 'JetBrains Mono', monospace"; x.textAlign = "center"; x.fillText(label, cx, cy + ry + 14); x.textAlign = "left"; } }
-    // the queen: pulses with the heartbeat, stills when it stops
-    { const [qx, qy] = P("queen"), beat = mood === "down" ? 0 : (Math.sin(ts / (mood === "closed" ? 1400 : 420)) + 1) / 2;
-      x.save(); x.translate(qx, qy); x.scale(1.9 * sc, 1.9 * sc); drawAnt(0, 0, 0, `rgba(${tint},${.75 + beat * .25})`, null, ts / 300 * pace); x.restore();
-      x.fillStyle = `rgba(${tint},${.08 + beat * .18})`; x.beginPath(); x.ellipse(qx, qy, 40 * sc, 18 * sc, 0, 0, 7); x.fill(); }
-    // granary pile: one seed per trade
-    { const [gx, gy] = P("gran"); granary.forEach((win, i) => { const row = Math.floor(i / 12), col = i % 12;
-        x.fillStyle = win ? "rgba(63,242,200,.9)" : "rgba(255,77,94,.9)";
-        x.beginPath(); x.arc(gx - 33 + col * 6 + (row % 2) * 3, gy + 14 - row * 5, 2.4, 0, 7); x.fill(); });
-      const pnl = S.data.state?.day_pnl ?? S.data.summary?.net; if (pnl != null) { x.fillStyle = pnl >= 0 ? "#3ff2c8" : "#ff4d5e"; x.font = "600 11px 'JetBrains Mono', monospace";
-        x.textAlign = "center"; x.fillText(money(pnl), gx, gy - 30); x.textAlign = "left"; } }
-    // nursery eggs = open positions
-    { const [nx, ny] = P("nurse"), n = Math.min(6, S.data.state?.open_positions || 0);
-      for (let i = 0; i < n; i++) { x.fillStyle = "rgba(231,233,251,.85)"; x.beginPath(); x.ellipse(nx - 12 + i * 5, ny + 3, 2, 3, .3, 0, 7); x.fill(); } }
-    // ants
-    const labels = [];
-    for (const a of ants) {
-      const pts = path(ROUTES[a.route]); const [p0, p1] = [pts[a.seg], pts[a.seg + 1]];
-      if (!p1) { a.done = true; continue; }
-      const len = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
-      const step = a.failing || (a.kind === "worker" && mood === "stale" && (a.route === "forageL" || a.route === "forageR")) ? 0 : a.speed * dt * pace;
-      a.t += step / len; a.wob += step * .4;
-      if (a.t >= 1) { a.t = 0; a.seg++; if (a.seg >= pts.length - 1) { if (a.loop) a.seg = 0; else { a.done = true; continue; } } }
-      const px = p0[0] + (p1[0] - p0[0]) * a.t, py = p0[1] + (p1[1] - p0[1]) * a.t + Math.sin(a.wob) * 1.2;
-      const col = a.failing ? "#ff4d5e" : a.kind === "runner" ? "#5fe3ff" : a.label ? "#ffffff" : mood === "down" ? "rgba(255,77,94,.75)" : "rgba(220,214,240,.6)";
-      x.save(); x.translate(px, py); x.scale(sc, sc); drawAnt(0, 0, Math.atan2(p1[1] - p0[1], p1[0] - p0[0]), col, a.cargo, a.wob * 3);
+    const dt = Math.min(.05, (ts - last) / 1000 || 0); last = ts; const pc = pace(), T = tint(), Ts = RGB(T);
+    if (!cam.auto && !cam.drag && cam.idle && ts - cam.idle > 6000) cam.auto = true;
+    if (cam.auto && !cam.drag) cam.tYaw += dt * .05;
+    cam.yaw += (cam.tYaw - cam.yaw) * .12; cam.pitch += (cam.tPitch - cam.pitch) * .12; cam.zoom += (cam.tZoom - cam.zoom) * .12; setCam();
+    // deep space
+    const bg = x.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * .75); bg.addColorStop(0, "#071226"); bg.addColorStop(.5, "#040a18"); bg.addColorStop(1, "#01030a");
+    x.fillStyle = bg; x.fillRect(0, 0, w, h);
+    for (const s of galaxy) { const p = P(s.x, s.y, s.z); if (!p || p.x < -4 || p.x > w + 4 || p.y < -4 || p.y > h + 4) continue;
+      const tw = .75 + .25 * Math.sin(ts / 700 + s.x); x.fillStyle = `rgba(${s.c[0]},${s.c[1]},${s.c[2]},${Math.min(1, s.b * tw * (mood === "down" ? .5 : 1))})`;
+      const sz = Math.max(.6, Math.min(2.4, s.s * p.k * 3)); x.fillRect(p.x, p.y, sz, sz); }
+    // nebula haze in the galactic plane
+    { const p = P(0, 0, 0); if (p) { glow(p.x, p.y, R.mkt * p.k * 3.2, "155,123,255", .05); glow(p.x, p.y, R.mkt * p.k * 1.8, Ts, .05); } }
+    // orbits
+    for (const a of ants) ring(a, a.failing ? "255,77,94" : Ts, a.failing ? .35 : .13);
+    ring({ r: R.belt, inc: 0, node: 0 }, "231,233,251", .07, [2, 5]);
+    ring({ r: R.mkt, inc: .06, node: .3 }, "155,123,255", .16, [6, 6]);
+    // collect everything with a depth, then paint back to front
+    const items = []; shots = [];
+    const sun = P(0, 0, 0);
+    // planets (ants)
+    for (const a of ants) { if (!a.failing) a.ang += dt * a.sp * pc;
+      const p3 = onOrbit(a, a.ang), p = P(...p3); if (!p) continue;
+      if (ts - (a.lt || 0) > 90) { a.trail.push(p3); if (a.trail.length > 18) a.trail.shift(); a.lt = ts; }
+      items.push({ z: p.z, draw: () => {
+        const rgb = a.failing ? "255,77,94" : a.hue < .33 ? "95,227,255" : a.hue < .66 ? "155,123,255" : "63,242,200", rad = Math.min(16, Math.max(2, a.size * p.k * 2.2));
+        x.lineWidth = 1.2; for (let i = 1; i < a.trail.length; i++) { const q0 = P(...a.trail[i - 1]), q1 = P(...a.trail[i]); if (!q0 || !q1) continue;
+          x.strokeStyle = `rgba(${rgb},${i / a.trail.length * .35})`; x.beginPath(); x.moveTo(q0.x, q0.y); x.lineTo(q1.x, q1.y); x.stroke(); }
+        glow(p.x, p.y, rad * 3.2, rgb, a.failing ? .35 + .25 * Math.sin(ts / 160) : .22);
+        sphere(p.x, p.y, rad, rgb, sun ? [Math.sign(sun.x - p.x) * .8, Math.sign(sun.y - p.y) * .8] : [0, 0]);
+        if (a.failing) { x.strokeStyle = `rgba(255,77,94,${.5 + .4 * Math.sin(ts / 200)})`; x.lineWidth = 1; x.beginPath(); x.arc(p.x, p.y, rad + 4 + (ts / 60 % 8), 0, TAU); x.stroke(); }
+        labels.push({ text: a.name.replace(/_/g, " ") + (a.failing ? ` ×${a.failing}` : ""), px: p.x, py: p.y - rad - 6, bad: !!a.failing, z: p.z });
+        shots.push({ x: p.x, y: p.y, rad, html: `<b>${esc(a.name)}</b><br>${a.runs ?? 0} runs · ${a.failures ?? 0} failures${a.failing ? `<br><span class="neg">failing ×${a.failing}${a.err ? " · " + esc(String(a.err).slice(0, 60)) : ""}</span>` : `<br>last ok ${a.last ? et(new Date(a.last)).hms : "—"}`}` });
+      } }); }
+    // contract planets
+    for (const pl of planets) { pl.ang += dt * pl.sp * pc; const p3 = onOrbit(pl, pl.ang), p = P(...p3); if (!p) continue;
+      items.push({ z: p.z, draw: () => { const rad = Math.min(20, Math.max(3, 4.6 * p.k * 2.2)), up = (pl.chg ?? 0) >= 0, rgb = "231,233,251";
+        glow(p.x, p.y, rad * 3, "155,123,255", .18); sphere(p.x, p.y, rad, "176,160,255", sun ? [Math.sign(sun.x - p.x) * .8, Math.sign(sun.y - p.y) * .8] : [0, 0]);
+        x.strokeStyle = `rgba(${rgb},.35)`; x.lineWidth = 1; x.beginPath(); x.ellipse(p.x, p.y, rad * 1.9, rad * .55, -.35, 0, TAU); x.stroke();
+        x.font = "600 10.5px 'JetBrains Mono', monospace"; x.textAlign = "center"; x.fillStyle = "rgba(231,233,251,.9)"; x.fillText(pl.sym, p.x, p.y + rad + 13);
+        if (pl.price != null) { x.fillStyle = up ? "#3ff2c8" : "#ff4d5e"; x.font = "600 10px 'JetBrains Mono', monospace"; x.fillText(Number(pl.price).toLocaleString("en-US", { maximumFractionDigits: 2 }), p.x, p.y + rad + 25); }
+        x.textAlign = "left";
+        shots.push({ x: p.x, y: p.y, rad, html: `<b>${esc(pl.sym)}</b>${pl.price != null ? `<br>last ${Number(pl.price).toLocaleString()}<br><span class="${up ? "pos" : "neg"}">${up ? "+" : ""}${(pl.chg || 0).toFixed(2)} session</span>` : "<br>select it above to load its chart"}` });
+      } }); }
+    // asteroid belt
+    for (const b of belt) { b.ang += dt * .045 * pc; const o = { r: R.belt + b.dr, inc: 0, node: 0 }, p3 = onOrbit(o, b.ang); p3[1] += b.y; const p = P(...p3); if (!p) continue;
+      items.push({ z: p.z, draw: () => { const rgb = b.win ? "63,242,200" : "255,77,94", rad = Math.min(7, Math.max(1, b.s * p.k * 1.6));
+        glow(p.x, p.y, rad * 3, rgb, .25); x.fillStyle = `rgba(${rgb},.95)`; x.beginPath(); x.arc(p.x, p.y, rad, 0, TAU); x.fill();
+        shots.push({ x: p.x, y: p.y, rad: Math.max(rad, 4), html: `<b>trade</b><br><span class="${b.win ? "pos" : "neg"}">${money(b.pnl)}</span>` }); } }); }
+    // moons = open positions
+    for (let i = 0; i < moons; i++) { const a = ts / 1000 * .9 * Math.max(pc, .15) + i / moons * TAU, p = P(Math.cos(a) * 14, Math.sin(a * 2) * 3, Math.sin(a) * 14); if (!p) continue;
+      items.push({ z: p.z, draw: () => { glow(p.x, p.y, 7 * p.k * 2, "231,233,251", .35); x.fillStyle = "#eef0ff"; x.beginPath(); x.arc(p.x, p.y, Math.max(1.6, 1.6 * p.k * 2), 0, TAU); x.fill(); } }); }
+    // comets: closed trades flying in
+    for (const c of comets) { c.life += dt / c.dur; const e = 1 - Math.pow(1 - Math.min(1, c.life), 3);
+      const tgt = onOrbit({ r: R.belt, inc: 0, node: 0 }, c.i * 2.39996), px = c.x0 + (tgt[0] - c.x0) * e, py = c.y0 + (tgt[1] - c.y0) * e, pz = c.z0 + (tgt[2] - c.z0) * e;
+      const p = P(px, py, pz), q = P(c.x0 + (tgt[0] - c.x0) * Math.max(0, e - .12), c.y0 + (tgt[1] - c.y0) * Math.max(0, e - .12), c.z0 + (tgt[2] - c.z0) * Math.max(0, e - .12)); if (!p || !q) continue;
+      items.push({ z: p.z, draw: () => { const rgb = c.win ? "63,242,200" : "255,77,94", tail = x.createLinearGradient(q.x, q.y, p.x, p.y);
+        tail.addColorStop(0, `rgba(${rgb},0)`); tail.addColorStop(1, `rgba(${rgb},.9)`); x.strokeStyle = tail; x.lineWidth = 2.4; x.beginPath(); x.moveTo(q.x, q.y); x.lineTo(p.x, p.y); x.stroke();
+        glow(p.x, p.y, 12, rgb, .9); } });
+      if (c.life >= 1) { addRock(c.t, c.i); waves.push({ life: .55, at: tgt, col: c.win ? "63,242,200" : "255,77,94", small: true }); c.done = true; } }
+    comets = comets.filter(c => !c.done);
+    // the star
+    if (sun) items.push({ z: 0, draw: () => {
+      beatGlow = Math.max(0, beatGlow - dt * .8); const life = mood === "down" ? .15 : 1, br = (Math.sin(ts / (mood === "closed" ? 1600 : 520)) + 1) / 2 * pc;
+      const core = Math.min(34, Math.max(7, 10 * sun.k * 2.2)) * (1 + beatGlow * .25);
+      glow(sun.x, sun.y, core * 9, Ts, .10 * life + beatGlow * .1); glow(sun.x, sun.y, core * 4, Ts, .28 * life + br * .08);
+      // corona rays
+      x.save(); x.translate(sun.x, sun.y); x.rotate(ts / 9000); x.strokeStyle = `rgba(${Ts},${.18 * life})`; x.lineWidth = 1;
+      for (let i = 0; i < 18; i++) { const L = core * (2.2 + ((i * 37) % 7) / 4 + br * .5); x.rotate(TAU / 18); x.beginPath(); x.moveTo(core * 1.15, 0); x.lineTo(L, 0); x.stroke(); }
       x.restore();
-      if (a.label) labels.push({ text: a.label.replace(/_/g, " ") + (a.failing ? ` ×${a.failing}` : ""), px, py: py - 9 * sc, bad: !!a.failing });
-      x.save(); x.restore();
-    }
-    // names: failing ones first, and never two on top of each other
-    x.font = "600 9.5px 'JetBrains Mono', monospace"; x.textAlign = "center";
-    const placed = [];
-    for (const L of labels.sort((p, q) => q.bad - p.bad)) {
-      const wdt = x.measureText(L.text).width + 6;
-      if (placed.some(o => Math.abs(o.px - L.px) < (o.w + wdt) / 2 && Math.abs(o.py - L.py) < 12)) continue;
-      placed.push({ px: L.px, py: L.py, w: wdt });
-      x.fillStyle = "rgba(9,8,19,.75)"; x.fillRect(L.px - wdt / 2, L.py - 9, wdt, 12);
-      x.fillStyle = L.bad ? "#ff4d5e" : "rgba(231,233,251,.85)"; x.fillText(L.text, L.px, L.py);
-    }
+      const g = x.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, core); g.addColorStop(0, `rgba(255,255,255,${life})`); g.addColorStop(.45, `rgba(${Ts},${.95 * life})`); g.addColorStop(1, `rgba(${Ts},${.25 * life})`);
+      x.fillStyle = g; x.beginPath(); x.arc(sun.x, sun.y, core, 0, TAU); x.fill();
+      x.font = "600 11px 'JetBrains Mono', monospace"; x.textAlign = "center"; x.fillStyle = `rgba(231,233,251,${.55 + .4 * life})`;
+      x.fillText((S.data.bot || "bot").toUpperCase(), sun.x, sun.y + core + 16);
+      if (paused && mood !== "down") { x.fillStyle = "#ffb84d"; x.fillText("⏸ PAUSED · kill switch on", sun.x, sun.y - core - 12); }
+      x.textAlign = "left"; } });
+    // heartbeat shockwaves and photons
+    for (const wv of waves) { wv.life += dt / (wv.small ? .9 : 2.6); }
+    waves = waves.filter(wv => wv.life < 1);
+    for (const ph of photons) { ph.life += dt / 1.8; } photons = photons.filter(p => p.life < 1);
+    const labels = [];
+    items.sort((a, b) => b.z - a.z).forEach(it => it.draw());
+    for (const wv of waves) { const k = wv.life, rr = wv.small ? 4 + k * 10 : k * R.belt * 1.15;
+      if (wv.small) { const p = P(...wv.at); if (p) { x.strokeStyle = `rgba(${wv.col},${1 - k})`; x.lineWidth = 1.5; x.beginPath(); x.arc(p.x, p.y, rr * p.k * 2, 0, TAU); x.stroke(); } }
+      else { x.lineWidth = 2; ring({ r: Math.max(1, rr), inc: 0, node: 0 }, Ts, (1 - k) * .55); } }
+    for (const ph of photons) { const t3 = onOrbit(ph.to, ph.to.ang), e = ph.life, p = P(t3[0] * e, t3[1] * e, t3[2] * e); if (!p) continue;
+      glow(p.x, p.y, 10, Ts, .9 * (1 - e * .5)); x.fillStyle = "#fff"; x.beginPath(); x.arc(p.x, p.y, 1.8, 0, TAU); x.fill(); }
+    // names, nearest first, never stacked
+    x.font = "600 9.5px 'JetBrains Mono', monospace"; x.textAlign = "center"; const placed = [];
+    for (const L of labels.sort((p, q) => (q.bad - p.bad) || (p.z - q.z))) { const wd = x.measureText(L.text).width + 8;
+      if (placed.some(o => Math.abs(o.px - L.px) < (o.w + wd) / 2 && Math.abs(o.py - L.py) < 13)) continue; placed.push({ px: L.px, py: L.py, w: wd });
+      x.fillStyle = "rgba(2,6,14,.72)"; x.fillRect(L.px - wd / 2, L.py - 9.5, wd, 13); x.fillStyle = L.bad ? "#ff4d5e" : "rgba(231,233,251,.88)"; x.fillText(L.text, L.px, L.py); }
     x.textAlign = "left";
-    ants = ants.filter(a => !a.done);
-    if (paused && mood !== "down") { const [qx, qy] = P("queen"); x.fillStyle = "#ffb84d"; x.font = "600 10.5px 'JetBrains Mono', monospace";
-      x.textAlign = "center"; x.fillText("⏸ PAUSED · kill switch on", qx, qy - 30 * sc); x.textAlign = "left"; }
-    if (mood === "down") { x.fillStyle = "rgba(255,77,94,.07)"; x.fillRect(0, 0, w, h);
-      x.fillStyle = "#ff4d5e"; x.font = "600 12px 'JetBrains Mono', monospace"; x.textAlign = "right"; x.fillText("THE COLONY HAS GONE STILL", w - 12, h - 12); x.textAlign = "left"; }
+    // HUD
+    const s = S.data.summary || {}, pnl = S.data.state?.day_pnl ?? s.net;
+    x.font = "600 10.5px 'JetBrains Mono', monospace"; x.fillStyle = "rgba(231,233,251,.6)";
+    x.fillText(w > 560 ? `SYSTEM ${(S.data.bot || "").toUpperCase()} · ${ants.length} PLANETS · ${belt.length} TRADES IN THE BELT · ${moons} OPEN` : `${ants.length} PLANETS · ${belt.length} TRADES · ${moons} OPEN`, 14, 22);
+    if (pnl != null) { x.fillStyle = pnl >= 0 ? "#3ff2c8" : "#ff4d5e"; x.font = "600 18px 'JetBrains Mono', monospace"; x.fillText(money(pnl), 14, 46); }
+    x.font = "10px 'JetBrains Mono', monospace"; x.fillStyle = "rgba(231,233,251,.38)"; x.textAlign = "right";
+    x.fillText(w > 520 ? "drag to orbit · scroll to zoom · double-click to reset" : "drag to orbit", w - 14, h - 12); x.textAlign = "left";
+    if (mood === "down") { x.fillStyle = "rgba(255,77,94,.08)"; x.fillRect(0, 0, w, h); x.fillStyle = "#ff4d5e"; x.font = "600 13px 'JetBrains Mono', monospace"; x.textAlign = "center";
+      x.fillText("SIGNAL LOST · THE STAR HAS GONE DARK", w / 2, 30); x.textAlign = "left"; }
   }
-  return { resize, ingest, frame };
+  function beat(){ beatGlow = 1; }
+  return { resize, ingest, frame, beat, pulse: () => { pulse(); beatGlow = 1; } };
 })();
+
+$("unifull").addEventListener("click", () => { const p = $("unipanel"), on = !p.classList.contains("full"); p.classList.toggle("full", on);
+  $("unifull").setAttribute("aria-pressed", on); $("unifull").textContent = on ? "Exit" : "Fullscreen"; requestAnimationFrame(() => Col.resize()); });
+addEventListener("keydown", e => { if (e.key === "Escape" && $("unipanel").classList.contains("full")) $("unifull").click(); });
 
 /* ═════════ live loop ═════════ */
 function tick(){
